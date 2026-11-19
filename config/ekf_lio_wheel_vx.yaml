@@ -1,0 +1,41 @@
+# Variant: wheel odom used for forward speed only (wheel yaw rate/vy slip in turns); yaw rate comes from the IMU.
+# robot_localization: fuse LIO/VIO odometry + wheel odometry + IMU.
+# Remap/rename topics to match your robot. Tune after checking with evo.
+ekf_filter_node:
+  ros__parameters:
+    frequency: 50.0
+    two_d_mode: false
+    publish_tf: true
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: odom
+
+    # LIO/VIO output: trust pose (x y z, roll pitch yaw), not its velocities
+    odom0: /lio/odom
+    odom0_config: [true,  true,  true,
+                   true,  true,  true,
+                   false, false, false,
+                   false, false, false,
+                   false, false, false]
+    odom0_differential: false
+    odom0_queue_size: 10
+
+    # Wheel odometry: velocity only, robust at low-texture / degenerate scenes
+    odom1: /wheel/odom
+    odom1_config: [false, false, false,
+                   false, false, false,
+                   true,  false, false,
+                   false, false, false,
+                   false, false, false]
+    odom1_queue_size: 10
+
+    # IMU: angular velocity + linear acceleration
+    imu0: /imu/data
+    imu0_config: [false, false, false,
+                  false, false, false,
+                  false, false, false,
+                  true,  true,  true,
+                  true,  true,  true]
+    imu0_remove_gravitational_acceleration: true
+    imu0_queue_size: 50
