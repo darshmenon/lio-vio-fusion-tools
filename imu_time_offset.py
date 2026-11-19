@@ -2,7 +2,8 @@
 """Estimate time offset between IMU gyro and an odometry/pose source by
 cross-correlating angular-rate magnitudes. A wrong offset is a top cause of bad LIO/VIO.
 Usage: imu_time_offset.py <bag_dir> <imu_topic> <odom_topic> [max_offset_s=0.3]
-Positive result = odom stamps lag the IMU (shift odom earlier by that amount)."""
+Set MODE=yaw for signed gyro-z vs yaw-rate (better for legged/ground robots). Positive result = odom stamps lag the IMU (shift odom earlier by that amount)."""
+import os
 import sys
 import numpy as np
 import rosbag2_py
@@ -26,6 +27,18 @@ def read(bag, topics):
     return out
 
 
+def yaw_rate(msgs):
+    """Signed yaw rate (rad/s) from odom orientation: robust for ground robots whose gyro norm is dominated by gait/vibration."""
+    t, y = [], []
+    for m in msgs:
+        p = m.pose.pose if hasattr(m.pose, "pose") else m.pose
+        o = p.orientation
+        t.append(m.header.stamp.sec + m.header.stamp.nanosec * 1e-9)
+        y.append(np.arctan2(2 * (o.w * o.z + o.x * o.y), 1 - 2 * (o.y * o.y + o.z * o.z)))
+    t, y = np.array(t), np.unwrap(np.array(y))
+    return t[1:], np.diff(y) / np.diff(t)
+
+
 def quat_rate(msgs):
     t, q = [], []
     for m in msgs:
@@ -42,8 +55,12 @@ def quat_rate(msgs):
 def main(bag, imu_t, odom_t, max_off=0.3):
     d = read(bag, [imu_t, odom_t])
     ti = np.array([m.header.stamp.sec + m.header.stamp.nanosec * 1e-9 for m in d[imu_t]])
-    wi = np.array([np.linalg.norm([m.angular_velocity.x, m.angular_velocity.y, m.angular_velocity.z]) for m in d[imu_t]])
-    to, wo = quat_rate(d[odom_t])
+    if os.environ.get("MODE", "norm") == "yaw":   # MODE=yaw: signed gyro-z vs odom yaw rate
+        wi = np.array([m.angular_velocity.z for m in d[imu_t]])
+        to, wo = yaw_rate(d[odom_t])
+    else:
+        wi = np.array([np.linalg.norm([m.angular_velocity.x, m.angular_velocity.y, m.angular_velocity.z]) for m in d[imu_t]])
+        to, wo = quat_rate(d[odom_t])
     dt = 0.005
     grid = np.arange(max(ti[0], to[0]) + 1, min(ti[-1], to[-1]) - 1, dt)
     a = np.interp(grid, ti, wi); a -= a.mean()
